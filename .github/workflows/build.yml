@@ -32,7 +32,32 @@ jobs:
           $ErrorActionPreference = 'Stop'
           dotnet publish src/Unlocker.Desktop/Unlocker.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/portable /p:WindowsAppSDKSelfContained=true /p:PublishTrimmed=false /p:PublishSingleFile=false /p:PublishReadyToRun=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $required = @('Unlocker.Desktop.exe', 'Microsoft.ui.xaml.dll', 'Microsoft.WindowsAppRuntime.dll', 'Microsoft.WindowsAppRuntime.Bootstrap.dll', 'Microsoft.WindowsAppRuntime.Bootstrap.Net.dll')
+
+          # Unpackaged WinUI 3 still depends on the MSVC runtime. Keep the ZIP truly
+          # portable by app-local deploying the redistributable CRT DLLs rather than
+          # requiring the user to install vc_redist.x64.exe first.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'vswhere.exe not found on runner' }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Redist.14.Latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation with VC++ redistributables not found' }
+          $crtDir = Get-ChildItem -Path (Join-Path $vs 'VC\Redist\MSVC') -Directory |
+            Sort-Object Name -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64\Microsoft.VC143.CRT' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Container } |
+            Select-Object -First 1
+          if (-not $crtDir) { throw 'Microsoft.VC143.CRT x64 redistributable directory not found' }
+          Copy-Item -Path (Join-Path $crtDir '*.dll') -Destination artifacts/portable -Force
+
+          $required = @(
+            'Unlocker.Desktop.exe',
+            'Microsoft.ui.xaml.dll',
+            'Microsoft.WindowsAppRuntime.dll',
+            'Microsoft.WindowsAppRuntime.Bootstrap.dll',
+            'Microsoft.WindowsAppRuntime.Bootstrap.Net.dll',
+            'vcruntime140.dll',
+            'vcruntime140_1.dll',
+            'msvcp140.dll'
+          )
           foreach ($file in $required) {
             if (-not (Test-Path -LiteralPath (Join-Path 'artifacts/portable' $file) -PathType Leaf)) { throw "Portable runtime payload missing: $file" }
           }
