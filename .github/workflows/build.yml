@@ -64,6 +64,7 @@ jobs:
           Copy-Item LICENSE artifacts/portable/LICENSE
           Copy-Item README.md artifacts/portable/README.md
           Copy-Item tools/Diagnose-Startup.ps1 artifacts/portable/Diagnose-Startup.ps1
+          Copy-Item tools/Diagnose-Startup.cmd artifacts/portable/Diagnose-Startup.cmd
           Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/SimpleUnlockerNext-Foundation-win-x64.zip -CompressionLevel Optimal
           ((Get-FileHash artifacts/SimpleUnlockerNext-Foundation-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  SimpleUnlockerNext-Foundation-win-x64.zip') | Set-Content artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
