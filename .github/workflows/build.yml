@@ -33,6 +33,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Source commit failed' }
             git push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { throw 'Source push failed' }
+          }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
