@@ -11,29 +11,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Import Foundation source (first run only)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (Test-Path foundation-code.tar.xz.b64) {
-            $encoded = [IO.File]::ReadAllText('foundation-code.tar.xz.b64').Trim()
-            [IO.File]::WriteAllBytes('foundation-code.tar.xz', [Convert]::FromBase64String($encoded))
-            $hash = (Get-FileHash foundation-code.tar.xz -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($hash -ne '8fc5261457447778f72f7384efac13ee43710b56909ee90f4b0916d4fc266f4a') { throw "Source archive SHA256 mismatch: $hash" }
-            tar.exe -xf foundation-code.tar.xz
-            if ($LASTEXITCODE -ne 0) { throw 'Source extraction failed' }
-            if (-not (Test-Path src/Unlocker.Desktop/Unlocker.Desktop.csproj)) { throw 'Source project missing' }
-            Invoke-WebRequest 'https://raw.githubusercontent.com/theDesConnet/SimpleUnlocker/v1-community/LICENSE' -OutFile LICENSE
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git rm foundation-code.tar.xz.b64
-            Remove-Item foundation-code.tar.xz
-            git add src tests LICENSE
-            git commit -m 'feat: import Foundation source code and GPL-2.0 license'
-            if ($LASTEXITCODE -ne 0) { throw 'Source commit failed' }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw 'Source push failed' }
-          }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -52,11 +29,16 @@ jobs:
       - name: Publish portable win-x64
         shell: pwsh
         run: |
-          dotnet publish src/Unlocker.Desktop/Unlocker.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/portable /p:WindowsAppSDKSelfContained=true
+          $ErrorActionPreference = 'Stop'
+          dotnet publish src/Unlocker.Desktop/Unlocker.Desktop.csproj -c Release -r win-x64 --self-contained true -o artifacts/portable /p:WindowsAppSDKSelfContained=true /p:PublishTrimmed=false /p:PublishSingleFile=false /p:PublishReadyToRun=false
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path artifacts/portable/Unlocker.Desktop.exe)) { throw 'Portable executable missing' }
+          $required = @('Unlocker.Desktop.exe', 'Microsoft.ui.xaml.dll', 'Microsoft.WindowsAppRuntime.dll', 'Microsoft.WindowsAppRuntime.Bootstrap.dll', 'Microsoft.WindowsAppRuntime.Bootstrap.Net.dll')
+          foreach ($file in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path 'artifacts/portable' $file) -PathType Leaf)) { throw "Portable runtime payload missing: $file" }
+          }
           Copy-Item LICENSE artifacts/portable/LICENSE
           Copy-Item README.md artifacts/portable/README.md
+          Copy-Item tools/Diagnose-Startup.ps1 artifacts/portable/Diagnose-Startup.ps1
           Compress-Archive -Path artifacts/portable/* -DestinationPath artifacts/SimpleUnlockerNext-Foundation-win-x64.zip -CompressionLevel Optimal
           ((Get-FileHash artifacts/SimpleUnlockerNext-Foundation-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  SimpleUnlockerNext-Foundation-win-x64.zip') | Set-Content artifacts/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
